@@ -105,6 +105,16 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#1a1a1a;min-heigh
 .setup-btn{width:100%;padding:13px;border-radius:10px;border:none;font-size:15px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;background:var(--blue);color:#fff;margin-bottom:10px}
 .setup-btn:active{transform:scale(0.98)}
 .setup-hint{font-size:12px;color:var(--gray);line-height:1.5}
+
+/* Date Picker for Log */
+.date-picker-row{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.date-nav-btn{width:32px;height:32px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555;font-size:16px;flex-shrink:0;transition:background .15s}
+.date-nav-btn:active{background:var(--gray-light)}
+.date-nav-btn:disabled{opacity:0.3;cursor:default}
+.date-display{flex:1;text-align:center;font-size:14px;font-weight:500;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;position:relative}
+.date-display.is-today{border-color:var(--blue-mid);color:var(--blue)}
+.today-chip{font-size:10px;font-weight:600;background:var(--blue-light);color:var(--blue);padding:1px 5px;border-radius:99px;margin-left:5px;vertical-align:middle}
+.past-edit-note{font-size:11px;color:var(--amber);background:var(--amber-light);padding:5px 8px;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;gap:4px}
 </style>
 </head>
 <body>
@@ -147,7 +157,6 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#1a1a1a;min-heigh
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-// ── PASTE YOUR FIREBASE CONFIG BELOW ──────────────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyCJvetnC8ACGf-0RKabTfVGdswl63FNXB0",
   authDomain: "summer-hustle-1c336.firebaseapp.com",
@@ -157,7 +166,6 @@ const firebaseConfig = {
   messagingSenderId: "329141770307",
   appId: "1:329141770307:web:6009355c2ca2f00d01dcf6"
 };
-// ──────────────────────────────────────────────────────────────────────────────
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
@@ -185,11 +193,21 @@ let currentTab = 'log';
 let dbData = { Luke:{days:{}}, Michael:{days:{}} };
 let unsubscribe = null;
 
+// Log tab selected date — defaults to today
+let logY = TY, logM = TM, logD = TD;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isWeekday(y,m,d){ const dow=new Date(y,m-1,d).getDay(); return dow>=1&&dow<=5; }
+function isValidLogDate(y,m,d){
+  if(m<5||m>7)return false;
+  if(!isWeekday(y,m,d))return false;
+  const dt=new Date(y,m-1,d);
+  return dt<=today;
+}
 function getMonday(y,m,d){ const dt=new Date(y,m-1,d); const day=dt.getDay(); return new Date(y,m-1,dt.getDate()-(day===0?6:day-1)); }
 function dateKey(y,m,d){ return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2000); }
+function isToday(y,m,d){ return y===TY&&m===TM&&d===TD; }
 
 function setSyncStatus(status){
   const dot=document.getElementById('sync-dot');
@@ -272,6 +290,29 @@ function getPayout(user,month){
   return(getExpectedDays(month)>0?stats.credits/getExpectedDays(month):0)>=0.9?500:-500;
 }
 
+// ── Find prev/next valid log date ─────────────────────────────────────────────
+function prevValidDate(y,m,d){
+  let dt=new Date(y,m-1,d);
+  for(let i=0;i<60;i++){
+    dt.setDate(dt.getDate()-1);
+    const ny=dt.getFullYear(),nm=dt.getMonth()+1,nd=dt.getDate();
+    if(isValidLogDate(ny,nm,nd))return{y:ny,m:nm,d:nd};
+  }
+  return null;
+}
+
+function nextValidDate(y,m,d){
+  let dt=new Date(y,m-1,d);
+  const todayDt=new Date(TY,TM-1,TD);
+  for(let i=0;i<60;i++){
+    dt.setDate(dt.getDate()+1);
+    if(dt>todayDt)return null;
+    const ny=dt.getFullYear(),nm=dt.getMonth()+1,nd=dt.getDate();
+    if(isValidLogDate(ny,nm,nd))return{y:ny,m:nm,d:nd};
+  }
+  return null;
+}
+
 // ── Setup Screen ──────────────────────────────────────────────────────────────
 function showSetup(){
   document.getElementById('setup-screen').style.display='flex';
@@ -290,6 +331,13 @@ function showSetup(){
 
 function login(user){
   currentUser=user;
+  // Reset log date to today on login
+  logY=TY; logM=TM; logD=TD;
+  // If today isn't a valid log date, find the most recent valid one
+  if(!isValidLogDate(logY,logM,logD)){
+    const prev=prevValidDate(logY,logM,logD);
+    if(prev){logY=prev.y;logM=prev.m;logD=prev.d;}
+  }
   localStorage.setItem('sh_user',user);
   document.getElementById('setup-screen').style.display='none';
   document.getElementById('app').style.display='block';
@@ -335,15 +383,7 @@ function render(){
 }
 
 function renderTabs(){
-  const isParent=currentUser==='Parents';
-  const boys=['Luke','Michael'];
-  const tabs=isParent?boys:[currentUser];
-  // For non-parents, no extra tab switching needed — page tabs handled by nav
   document.getElementById('page-tabs').innerHTML='';
-  if(isParent){
-    // Parents can switch which son to focus on in log view
-    // handled inline in renderLog
-  }
 }
 
 function renderNav(){
@@ -356,31 +396,61 @@ function renderNav(){
     <button class="nav-item${currentTab===t.id?' active':''}" onclick="setTab('${t.id}')">
       <i class="ti ${t.icon}" aria-hidden="true"></i>${t.label}
     </button>`).join('');
-  // update header sub
   const headerSub=document.querySelector('.header-sub');
   if(headerSub)headerSub.textContent='';
 }
 
 function renderLog(){
   const isParent=currentUser==='Parents';
-  const y=TY,m=TM,d=TD;
-  if(!isWeekday(y,m,d)||m<5||m>7){
-    document.getElementById('main-content').innerHTML=`<div class="section"><div class="empty"><i class="ti ti-calendar-off" style="font-size:36px;display:block;margin-bottom:10px" aria-hidden="true"></i>No logging today — weekdays May through July only.</div></div>`;
-    return;
-  }
+  const y=logY, m=logM, d=logD;
+
+  // Build date picker HTML
+  const prev=prevValidDate(y,m,d);
+  const next=nextValidDate(y,m,d);
+  const displayDate=new Date(y,m-1,d);
+  const dow=DAY_NAMES[displayDate.getDay()];
+  const isTodaySelected=isToday(y,m,d);
+  const monthName=MONTHS[m]?.name||'';
+  const dateLabel=`${dow}, ${monthName} ${d}`;
+
+  const datePickerHTML=`
+    <div class="date-picker-row">
+      <button class="date-nav-btn" onclick="window._prevDay()" ${prev?'':'disabled'} title="Previous weekday">
+        <i class="ti ti-chevron-left" aria-hidden="true"></i>
+      </button>
+      <div class="date-display${isTodaySelected?' is-today':''}">
+        ${dateLabel}${isTodaySelected?'<span class="today-chip">Today</span>':''}
+      </div>
+      <button class="date-nav-btn" onclick="window._nextDay()" ${next?'':'disabled'} title="Next weekday">
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
+    </div>
+    ${!isTodaySelected?`<div class="past-edit-note"><i class="ti ti-pencil" aria-hidden="true"></i> Editing a previous day — changes will update that day's record.</div>`:''}
+  `;
+
   const users=isParent?['Luke','Michael']:[currentUser];
   const colorMap={green:'var(--green)',blue:'var(--blue)',amber:'var(--amber)',purple:'var(--purple)'};
   const bgMap={green:'var(--green-light)',blue:'var(--blue-light)',amber:'var(--amber-light)',purple:'var(--purple-light)'};
   let html=`<div class="section">`;
-  if(isParent)html+=`<div class="info-note" style="margin-bottom:12px">Parents view — today's entries for both boys.</div>`;
+  html+=`<div class="card" style="padding:12px 14px 10px">${datePickerHTML}</div>`;
+
+  if(isParent)html+=`<div class="info-note" style="margin-bottom:12px">Parents view — ${dateLabel} entries for both boys.</div>`;
+
+  if(!isValidLogDate(y,m,d)){
+    html+=`<div class="empty"><i class="ti ti-calendar-off" style="font-size:36px;display:block;margin-bottom:10px" aria-hidden="true"></i>No logging on this day — weekdays May through July only.</div>`;
+    html+=`</div>`;
+    document.getElementById('main-content').innerHTML=html;
+    return;
+  }
 
   users.forEach(u=>{
     const e=getDayEntry(u,y,m,d);
+    // For week stats, always use today's week context for the progress bar
     const ws=getWeekStats(u,y,m,d);
     const todayMins=getTotalMins(e);
     html+=`<div class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>${isParent?u+' — ':''}${MONTHS[m]?.name} ${d}</span>
+        <span>${isParent?u+' — ':''}${dateLabel}</span>
         ${MONTHS[m]?.trial?'<span class="trial-tag">Trial</span>':'<span class="month-tag">Counts</span>'}
       </div>
       <div class="toggle-row" style="border-bottom:0.5px solid var(--border)">
@@ -395,7 +465,7 @@ function renderLog(){
       </div>
       <div style="margin:10px 0 6px">
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-          <span style="color:var(--gray)">Today: ${todayMins} min</span>
+          <span style="color:var(--gray)">This day: ${todayMins} min</span>
           <span style="color:var(--gray)">Week: ${ws.totalMins} / 1,200 min</span>
         </div>
         <div class="hours-bar"><div class="hours-fill" style="width:${Math.min(100,ws.totalMins/12)}%;background:${ws.totalMins>=1200?'var(--green)':ws.totalMins>=900?'var(--amber-mid)':'var(--blue-mid)'}"></div></div>
@@ -411,12 +481,12 @@ function renderLog(){
             ${cat.id==='custom'
               ?`<input class="custom-input" type="text" placeholder="Name this task..." value="${e.customLabel||''}" oninput="window._updateLabel('${u}',${y},${m},${d},this.value)" style="margin-bottom:3px;display:block;width:100%">`
               :`<div>${cat.label}</div>`}
-            <div class="input-sub" style="margin-top:${cat.id==='custom'?2:0}px">minutes today</div>
+            <div class="input-sub" style="margin-top:${cat.id==='custom'?2:0}px">minutes</div>
           </div>
           <input class="min-input" type="number" min="0" max="480" step="5" value="${val||''}" placeholder="0" oninput="window._updateMins('${u}',${y},${m},${d},'${cat.id}',this.value)">
         </div>`;
       });
-      html+=`</div><div style="margin-top:12px"><button class="btn btn-primary" onclick="window._saveDay('${u}',${y},${m},${d})"><i class="ti ti-check" aria-hidden="true"></i> Save today's log</button></div>`;
+      html+=`</div><div style="margin-top:12px"><button class="btn btn-primary" onclick="window._saveDay('${u}',${y},${m},${d})"><i class="ti ti-check" aria-hidden="true"></i> Save ${isTodaySelected?"today's":'this day\\'s'} log</button></div>`;
     } else {
       html+=`<div style="margin-top:8px">`;
       CATEGORIES.forEach(cat=>{
@@ -456,11 +526,11 @@ function renderMonth(){
       for(let d=1;d<=mi.days;d++){
         const dow=new Date(TY,mo-1,d).getDay();
         const isFuture=new Date(TY,mo-1,d)>today;
-        const isToday=mo===TM&&d===TD;
+        const isTodayCell=mo===TM&&d===TD;
         if(dow===0||dow===6){html+=`<div class="day-cell weekend">${d}</div>`;continue;}
-        if(isFuture){html+=`<div class="day-cell future${isToday?' today-marker':''}">${d}</div>`;continue;}
+        if(isFuture){html+=`<div class="day-cell future${isTodayCell?' today-marker':''}">${d}</div>`;continue;}
         const cr=getDayCredit(u,TY,mo,d,true);
-        html+=`<div class="day-cell ${cr==='full'?'full':cr==='partial'?'partial':'miss'}${mi.trial?' trial':''}${isToday?' today-marker':''}">${d}</div>`;
+        html+=`<div class="day-cell ${cr==='full'?'full':cr==='partial'?'partial':'miss'}${mi.trial?' trial':''}${isTodayCell?' today-marker':''}" title="${DAY_NAMES[dow]} ${mi.name} ${d}">${d}</div>`;
       }
       html+=`</div>
       <div class="info-note" style="margin-bottom:14px">
@@ -511,7 +581,6 @@ function renderTally(){
     }
     html+=`</div>`;
 
-    // Weekly stats
     html+=`<div class="card"><div class="card-title">This week</div>`;
     const ws=getWeekStats(u,TY,TM,TD);
     html+=`<div class="stat-grid">
@@ -531,9 +600,18 @@ function renderTally(){
   document.getElementById('main-content').innerHTML=html;
 }
 
-// ── Global handlers (called from inline HTML) ─────────────────────────────────
+// ── Global handlers ───────────────────────────────────────────────────────────
 window.setTab=(t)=>{ currentTab=t; render(); };
 window.logout=logout;
+
+window._prevDay=()=>{
+  const prev=prevValidDate(logY,logM,logD);
+  if(prev){logY=prev.y;logM=prev.m;logD=prev.d;renderLog();}
+};
+window._nextDay=()=>{
+  const next=nextValidDate(logY,logM,logD);
+  if(next){logY=next.y;logM=next.m;logD=next.d;renderLog();}
+};
 
 window._toggleWake=async(user,y,m,d)=>{
   const e=getDayEntry(user,y,m,d);
