@@ -71,14 +71,12 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#1a1a1a;min-heigh
 .day-cell.miss{background:var(--red-light);color:var(--red)}
 .day-cell.future{background:var(--gray-light);color:var(--gray)}
 .day-cell.today-marker{box-shadow:0 0 0 1.5px var(--blue-mid)}
-.day-cell.trial{opacity:0.55}
 .day-cell.weekend{background:transparent;color:var(--gray);opacity:0.3}
 .payout-card{border-radius:14px;padding:16px;margin-bottom:10px;border:1px solid}
 .payout-amount{font-size:28px;font-weight:600;font-family:'DM Mono',monospace;letter-spacing:-1px;margin-bottom:2px}
 .payout-label{font-size:12px;opacity:.75}
 .month-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:4px}
 .month-tag{font-size:11px;font-weight:600;background:var(--purple-light);color:var(--purple);padding:3px 8px;border-radius:99px}
-.trial-tag{font-size:11px;font-weight:600;background:var(--amber-light);color:var(--amber);padding:3px 8px;border-radius:99px}
 .nav-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;background:#fff;border-top:0.5px solid var(--border);display:flex;padding:8px 0 20px;z-index:200}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;border:none;background:transparent;cursor:pointer;font-size:10px;font-weight:500;color:var(--gray);font-family:'DM Sans',sans-serif;transition:color .15s}
 .nav-item.active{color:var(--blue)}
@@ -167,9 +165,8 @@ const db = getDatabase(app);
 
 const USERS = ['Luke', 'Michael', 'Parents'];
 const MONTHS = {
-  5:{name:'May',days:31,trial:true},
-  6:{name:'June',days:30,trial:false},
-  7:{name:'July',days:31,trial:false}
+  6:{name:'June',days:30},
+  7:{name:'July',days:31}
 };
 const CATEGORIES = [
   {id:'exercise',label:'Exercise',icon:'ti-run',color:'green'},
@@ -189,7 +186,7 @@ let logY = TY, logM = TM, logD = TD;
 
 function isWeekday(y,m,d){ const dow=new Date(y,m-1,d).getDay(); return dow>=1&&dow<=5; }
 function isValidLogDate(y,m,d){
-  if(m<5||m>7) return false;
+  if(m<6||m>7) return false;
   if(!isWeekday(y,m,d)) return false;
   return new Date(y,m-1,d) <= today;
 }
@@ -239,7 +236,7 @@ function getWeekStats(user,y,m,d){
   const days=getWeekDays(y,m,d); let totalMins=0,wakeCount=0,validDays=0;
   days.forEach(function(day){
     if(new Date(day.y,day.m-1,day.d)>today) return;
-    if(day.m<5||day.m>7) return;
+    if(day.m<6||day.m>7) return;
     const e=getDayEntry(user,day.y,day.m,day.d);
     totalMins+=getTotalMins(e); if(e.wake9) wakeCount++; validDays++;
   });
@@ -274,7 +271,7 @@ function getMonthStats(user,month){
 function getExpectedDays(month){ const mi=MONTHS[month]; if(!mi) return 0; let c=0; for(let d=1;d<=mi.days;d++) if(isWeekday(TY,month,d)) c++; return c; }
 
 function getPayout(user,month){
-  const mi=MONTHS[month]; if(!mi||mi.trial) return null;
+  const mi=MONTHS[month]; if(!mi) return null;
   const stats=getMonthStats(user,month); if(stats.possible===0) return null;
   return (getExpectedDays(month)>0?stats.credits/getExpectedDays(month):0)>=0.9?500:-500;
 }
@@ -409,11 +406,10 @@ function renderLog(){
     const e=getDayEntry(u,y,m,d);
     const ws=getWeekStats(u,y,m,d);
     const dayMins=getTotalMins(e);
-    const isTrial=MONTHS[m]&&MONTHS[m].trial;
     html+='<div class="card">';
     html+='<div class="card-title" style="display:flex;justify-content:space-between;align-items:center">';
     html+='<span>'+(isParent?u+' - ':'')+dateLabel+'</span>';
-    html+=isTrial?'<span class="trial-tag">Trial</span>':'<span class="month-tag">Counts</span>';
+    html+='<span class="month-tag">$500 stakes</span>';
     html+='</div>';
     html+='<div class="toggle-row" style="border-bottom:0.5px solid var(--border)">';
     html+='<div><div class="toggle-label">Up and productive by 9am</div><div class="toggle-sub">Required every day</div></div>';
@@ -469,13 +465,13 @@ function renderMonth(){
   let html='<div class="section">';
   users.forEach(function(u){
     html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Monthly Overview</div>';
-    [5,6,7].forEach(function(mo){
+    [6,7].forEach(function(mo){
       const mi=MONTHS[mo];
       const stats=getMonthStats(u,mo);
       const expected=getExpectedDays(mo);
       const pct90=Math.ceil(expected*0.9);
       html+='<div class="month-header"><div style="font-size:14px;font-weight:500">'+mi.name+'</div>';
-      html+=mi.trial?'<span class="trial-tag">Trial run</span>':'<span class="month-tag">$500 stakes</span>';
+      html+='<span class="month-tag">$500 stakes</span>';
       html+='</div>';
       html+='<div class="stat-grid" style="margin-bottom:10px">';
       html+='<div class="stat"><div class="stat-label">Days credited</div><div class="stat-num '+(stats.credits>=pct90?'green':stats.possible>0?'amber':'')+'">'+stats.credits+' / '+stats.possible+'</div><div class="stat-sub">of '+expected+' weekdays</div></div>';
@@ -492,10 +488,10 @@ function renderMonth(){
         if(dow===0||dow===6){ html+='<div class="day-cell weekend">'+d+'</div>'; continue; }
         if(isFuture){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
         const cr=getDayCredit(u,TY,mo,d,true);
-        html+='<div class="day-cell '+(cr==='full'?'full':cr==='partial'?'partial':'miss')+(mi.trial?' trial':'')+(isTodayCell?' today-marker':'')+'" >'+d+'</div>';
+        html+='<div class="day-cell '+(cr==='full'?'full':cr==='partial'?'partial':'miss')+(isTodayCell?' today-marker':'')+'" >'+d+'</div>';
       }
       html+='</div>';
-      html+='<div class="info-note" style="margin-bottom:14px"><span style="color:var(--green-mid);font-weight:600">Full</span> = 4 hrs + 9am start &nbsp;<span style="color:var(--amber-mid);font-weight:600">Partial</span> = week on track &nbsp;<span style="color:var(--red-mid);font-weight:600">Miss</span> = incomplete'+(mi.trial?'<br>Trial month - no money at stake':'')+'</div>';
+      html+='<div class="info-note" style="margin-bottom:14px"><span style="color:var(--green-mid);font-weight:600">Full</span> = 4 hrs + 9am start &nbsp;<span style="color:var(--amber-mid);font-weight:600">Partial</span> = week on track &nbsp;<span style="color:var(--red-mid);font-weight:600">Miss</span> = incomplete</div>';
     });
     html+='</div>';
   });
@@ -507,27 +503,23 @@ function renderTally(){
   const isParent=currentUser==='Parents';
   const users=isParent?['Luke','Michael']:[currentUser];
   let html='<div class="section">';
-  if(isParent) html+='<div class="info-note" style="margin-bottom:12px">May is a trial run. June and July: 90% or more earns <strong style="color:var(--green)">+$500</strong>, under 90% owes <strong style="color:var(--red)">$500</strong> rent.</div>';
+  if(isParent) html+='<div class="info-note" style="margin-bottom:12px">June and July: 90% or more earns <strong style="color:var(--green)">+$500</strong>, under 90% owes <strong style="color:var(--red)">$500</strong> rent.</div>';
   users.forEach(function(u){
     let total=0;
     html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Running Tally</div>';
-    [5,6,7].forEach(function(mo){
+    [6,7].forEach(function(mo){
       const mi=MONTHS[mo];
       const stats=getMonthStats(u,mo);
       const expected=getExpectedDays(mo);
       const pct90=Math.ceil(expected*0.9);
-      if(!mi.trial){
-        const payout=getPayout(u,mo);
-        const monthDone=new Date(TY,mo,1)<=today;
-        if(monthDone&&payout!==null){
-          total+=payout; const earned=payout>0;
-          html+='<div class="payout-card" style="background:'+(earned?'var(--green-light)':'var(--red-light)')+';border-color:'+(earned?'var(--green-mid)':'var(--red-mid)')+'"><div class="payout-amount" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+( earned?'+':'-')+'$'+Math.abs(payout)+'</div><div class="payout-label" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+mi.name+' - '+stats.credits+' of '+expected+' days ('+stats.pct+'%) - '+(earned?'Allowance earned':'Rent owed')+'</div></div>';
-        } else {
-          const onTrack=stats.possible===0||(stats.credits/(stats.possible||1)>=0.9);
-          html+='<div class="row"><div><div class="row-label">'+mi.name+'</div><div class="input-sub">'+stats.credits+' of '+stats.possible+' days - need '+pct90+' of '+expected+'</div></div><span class="badge" style="background:'+(onTrack?'var(--green-light)':'var(--amber-light)')+';color:'+(onTrack?'var(--green)':'var(--amber)')+'">'+( onTrack?'On track':'Behind')+'</span></div>';
-        }
+      const payout=getPayout(u,mo);
+      const monthDone=new Date(TY,mo,1)<=today;
+      if(monthDone&&payout!==null){
+        total+=payout; const earned=payout>0;
+        html+='<div class="payout-card" style="background:'+(earned?'var(--green-light)':'var(--red-light)')+';border-color:'+(earned?'var(--green-mid)':'var(--red-mid)')+'"><div class="payout-amount" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+( earned?'+':'-')+'$'+Math.abs(payout)+'</div><div class="payout-label" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+mi.name+' - '+stats.credits+' of '+expected+' days ('+stats.pct+'%) - '+(earned?'Allowance earned':'Rent owed')+'</div></div>';
       } else {
-        html+='<div class="row"><div><div class="row-label">'+mi.name+' <span class="trial-tag" style="margin-left:4px">Trial</span></div><div class="input-sub">'+stats.credits+' of '+stats.possible+' days - practice run</div></div><span class="badge" style="background:var(--gray-light);color:var(--gray)">No stakes</span></div>';
+        const onTrack=stats.possible===0||(stats.credits/(stats.possible||1)>=0.9);
+        html+='<div class="row"><div><div class="row-label">'+mi.name+'</div><div class="input-sub">'+stats.credits+' of '+stats.possible+' days - need '+pct90+' of '+expected+'</div></div><span class="badge" style="background:'+(onTrack?'var(--green-light)':'var(--amber-light)')+';color:'+(onTrack?'var(--green)':'var(--amber)')+'">'+( onTrack?'On track':'Behind')+'</span></div>';
       }
     });
     if([6,7].some(function(mo){ return new Date(TY,mo,1)<=today&&getPayout(u,mo)!==null; })){
