@@ -412,7 +412,7 @@ function renderLog(){
     html+='<span class="month-tag">$500 stakes</span>';
     html+='</div>';
     html+='<div class="toggle-row" style="border-bottom:0.5px solid var(--border)">';
-    html+='<div><div class="toggle-label">Up and productive by 9am</div><div class="toggle-sub">Required every day</div></div>';
+    html+='<div><div class="toggle-label">Up and productive by 10am</div><div class="toggle-sub">Required every day</div></div>';
     if(isParent){
       html+='<span class="badge" style="background:'+(e.wake9?'var(--green-light)':'var(--red-light)')+';color:'+(e.wake9?'var(--green)':'var(--red)')+'">'+( e.wake9?'Yes':'No')+'</span>';
     } else {
@@ -491,7 +491,7 @@ function renderMonth(){
         html+='<div class="day-cell '+(cr==='full'?'full':cr==='partial'?'partial':'miss')+(isTodayCell?' today-marker':'')+'" >'+d+'</div>';
       }
       html+='</div>';
-      html+='<div class="info-note" style="margin-bottom:14px"><span style="color:var(--green-mid);font-weight:600">Full</span> = 4 hrs + 9am start &nbsp;<span style="color:var(--amber-mid);font-weight:600">Partial</span> = week on track &nbsp;<span style="color:var(--red-mid);font-weight:600">Miss</span> = incomplete</div>';
+      html+='<div class="info-note" style="margin-bottom:14px"><span style="color:var(--green-mid);font-weight:600">Full</span> = 4 hrs + 10am start &nbsp;<span style="color:var(--amber-mid);font-weight:600">Partial</span> = week on track &nbsp;<span style="color:var(--red-mid);font-weight:600">Miss</span> = incomplete</div>';
     });
     html+='</div>';
   });
@@ -528,14 +528,14 @@ function renderTally(){
     html+='</div>';
     html+='<div class="card"><div class="card-title">This week</div>';
     const ws=getWeekStats(u,TY,TM,TD);
-    html+='<div class="stat-grid"><div class="stat"><div class="stat-label">Total minutes</div><div class="stat-num '+(ws.totalMins>=1200?'green':ws.totalMins>=900?'amber':'red')+'">'+ws.totalMins+'</div><div class="stat-sub">goal: 1,200 min</div></div><div class="stat"><div class="stat-label">9am start days</div><div class="stat-num '+(ws.wakeCount>=ws.validDays&&ws.validDays>0?'green':ws.wakeCount>0?'amber':'red')+'">'+ws.wakeCount+' / '+ws.validDays+'</div><div class="stat-sub">this week so far</div></div></div>';
+    html+='<div class="stat-grid"><div class="stat"><div class="stat-label">Total minutes</div><div class="stat-num '+(ws.totalMins>=1200?'green':ws.totalMins>=900?'amber':'red')+'">'+ws.totalMins+'</div><div class="stat-sub">goal: 1,200 min</div></div><div class="stat"><div class="stat-label">10am start days</div><div class="stat-num '+(ws.wakeCount>=ws.validDays&&ws.validDays>0?'green':ws.wakeCount>0?'amber':'red')+'">'+ws.wakeCount+' / '+ws.validDays+'</div><div class="stat-sub">this week so far</div></div></div>';
     const barColor=ws.totalMins>=1200?'var(--green)':ws.totalMins>=900?'var(--amber-mid)':'var(--blue-mid)';
     html+='<div class="hours-bar" style="margin-top:8px"><div class="hours-fill" style="width:'+Math.min(100,ws.totalMins/12)+'%;background:'+barColor+'"></div></div>';
     html+='<div style="font-size:12px;color:var(--gray);margin-top:4px;text-align:right">'+Math.round(ws.totalMins/12)+'% of weekly goal</div>';
     if(ws.totalMins>=1200&&ws.wakeCount===ws.validDays&&ws.validDays>0){
       html+='<div class="info-note" style="background:var(--green-light);color:var(--green);margin-top:8px"><i class="ti ti-trophy" aria-hidden="true"></i> Week complete - all days get full credit.</div>';
     } else if(ws.totalMins>=1200){
-      html+='<div class="info-note" style="margin-top:8px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Hours goal met but '+(ws.validDays-ws.wakeCount)+' day(s) missing 9am start.</div>';
+      html+='<div class="info-note" style="margin-top:8px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Hours goal met but '+(ws.validDays-ws.wakeCount)+' day(s) missing 10am start.</div>';
     }
     html+='</div>';
   });
