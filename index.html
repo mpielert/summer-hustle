@@ -170,8 +170,11 @@ const CATEGORIES = [
 {id:'custom',label:'Custom',icon:'ti-pencil',color:'purple'}
 ];
 
+// Weekly payout amount
 const WEEKLY_STAKE = 125;
+// Min weekly minutes to earn
 const WEEKLY_MIN_MINS = 1200;
+// Min daily minutes target (display only)
 const DAILY_MIN_MINS = 240;
 
 const today = new Date();
@@ -183,13 +186,15 @@ let currentTab = 'log';
 let dbData = { Luke:{days:{}}, Michael:{days:{}} };
 let unsubscribe = null;
 let logY = TY, logM = TM, logD = TD;
+const PROGRAM_START = new Date(TY,5,9); // Monday June 9 - program start
 
 function isWeekday(y,m,d){ const dow=new Date(y,m-1,d).getDay(); return dow>=1&&dow<=5; }
 
 function isValidLogDate(y,m,d){
 if(m<6||m>7) return false;
 if(!isWeekday(y,m,d)) return false;
-return new Date(y,m-1,d) <= today;
+const dt=new Date(y,m-1,d);
+return dt>=PROGRAM_START && dt<=today;
 }
 
 function getMonday(y,m,d){ const dt=new Date(y,m-1,d); const day=dt.getDay(); return new Date(y,m-1,dt.getDate()-(day===0?6:day-1)); }
@@ -228,12 +233,14 @@ toast('Save failed - check connection');
 
 function getTotalMins(e){ return (parseInt(e.exercise)||0)+(parseInt(e.work)||0)+(parseInt(e.house)||0)+(parseInt(e.custom)||0); }
 
+// Returns Mon–Fri dates for the week containing the given date
 function getWeekDays(y,m,d){
 const mon=getMonday(y,m,d); const days=[];
 for(let i=0;i<5;i++){ const dt=new Date(mon); dt.setDate(mon.getDate()+i); days.push({y:dt.getFullYear(),m:dt.getMonth()+1,d:dt.getDate()}); }
 return days;
 }
 
+// Stats for the week containing (y,m,d), restricted to Jun–Jul and not future
 function getWeekStats(user,y,m,d){
 const days=getWeekDays(y,m,d); let totalMins=0,wakeCount=0,validDays=0;
 days.forEach(function(day){
@@ -247,6 +254,7 @@ validDays++;
 return {totalMins:totalMins,wakeCount:wakeCount,validDays:validDays};
 }
 
+// A week is "complete" (all 5 M-F days counted) if Friday of that week is <= today and in Jun-Jul
 function isWeekComplete(y,m,d){
 const days=getWeekDays(y,m,d);
 const fri=days[4];
@@ -254,32 +262,33 @@ if(fri.m<6||fri.m>7) return false;
 return new Date(fri.y,fri.m-1,fri.d)<=today;
 }
 
+// Weekly payout: earn +$125 if 1200+ mins AND all valid weekdays had wake9; else -$125
+// Returns null if week not yet complete
 function getWeekPayout(user,y,m,d){
 if(!isWeekComplete(y,m,d)) return null;
 const ws=getWeekStats(user,y,m,d);
+// All 5 weekdays must be valid (in Jun-Jul)
 const days=getWeekDays(y,m,d);
 const validCount=days.filter(function(day){ return day.m>=6&&day.m<=7; }).length;
 if(validCount===0) return null;
 if(ws.totalMins>=WEEKLY_MIN_MINS && ws.wakeCount===validCount){
-return WEEKLY_STAKE;
+return WEEKLY_STAKE; // earned
 } else {
-return -WEEKLY_STAKE;
+return -WEEKLY_STAKE; // owe
 }
 }
 
+// Get all program weeks (Mon-Fri) that overlap Jun-Jul
+// Program starts the week of June 9, 2026
+
 function getProgramWeeks(){
 const weeks=[];
-const june1=new Date(TY,5,1);
-const june1dow=june1.getDay();
-const offsetToMon=june1dow===0?-6:1-june1dow;
-let mon=new Date(TY,5,june1.getDate()+offsetToMon);
+let mon=new Date(PROGRAM_START);
 const julEnd=new Date(TY,6,31);
 while(true){
-const fri=new Date(mon); fri.setDate(mon.getDate()+4);
 const weekStart={y:mon.getFullYear(),m:mon.getMonth()+1,d:mon.getDate()};
 const hasJunJul=getWeekDays(weekStart.y,weekStart.m,weekStart.d).some(function(day){ return day.m===6||day.m===7; });
-if(!hasJunJul) break;
-if(mon>julEnd) break;
+if(!hasJunJul||mon>julEnd) break;
 weeks.push({y:weekStart.y,m:weekStart.m,d:weekStart.d});
 mon=new Date(mon); mon.setDate(mon.getDate()+7);
 if(weeks.length>20) break;
@@ -287,6 +296,7 @@ if(weeks.length>20) break;
 return weeks;
 }
 
+// Day-level credit: hit = wake9 + 240+ mins; miss otherwise (for calendar display)
 function getDayCredit(user,y,m,d){
 const e=getDayEntry(user,y,m,d);
 if(!e.wake9) return 'miss';
@@ -444,6 +454,7 @@ html+='<span class="badge" style="background:'+(e.wake9?'var(--green-light)':'va
 html+='<button class="toggle '+(e.wake9?'on':'off')+'" onclick="window._toggleWake(\''+u+'\','+y+','+m+','+d+')"><div class="toggle-knob"></div></button>';
 }
 html+='</div>';
+// Daily progress
 html+='<div style="margin:10px 0 6px">';
 html+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
 html+='<span style="color:'+(dayGoalMet?'var(--green)':'var(--gray)')+'">Today: '+dayMins+' / '+DAILY_MIN_MINS+' min'+(dayGoalMet?' ✓':'')+'</span>';
@@ -502,10 +513,12 @@ const firstDow=new Date(TY,mo-1,1).getDay();
 for(let i=0;i<(firstDow===0?6:firstDow-1);i++) html+='<div></div>';
 for(let d=1;d<=mi.days;d++){
 const dow=new Date(TY,mo-1,d).getDay();
-const isFuture=new Date(TY,mo-1,d)>today;
+const cellDt=new Date(TY,mo-1,d);
+const isFuture=cellDt>today;
+const isBeforeProgram=cellDt<PROGRAM_START;
 const isTodayCell=mo===TM&&d===TD;
 if(dow===0||dow===6){ html+='<div class="day-cell weekend">'+d+'</div>'; continue; }
-if(isFuture){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
+if(isFuture||isBeforeProgram){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
 const cr=getDayCredit(u,TY,mo,d);
 html+='<div class="day-cell '+(cr==='full'?'full':'miss')+(isTodayCell?' today-marker':'')+'">'+d+'</div>';
 }
@@ -533,14 +546,17 @@ const ws=getWeekStats(u,wk.y,wk.m,wk.d);
 const label=formatWeekLabel(wk.y,wk.m,wk.d);
 const isCurrentWeek=isToday(TY,TM,TD)&&getMonday(TY,TM,TD).getTime()===new Date(wk.y,wk.m-1,wk.d).getTime();
 if(payout!==null){
+// Settled week
 netTotal+=payout; settledCount++;
 const earned=payout>0;
 html+='<div class="payout-card" style="background:'+(earned?'var(--green-light)':'var(--red-light)')+';border-color:'+(earned?'var(--green-mid)':'var(--red-mid)')+'"><div class="payout-amount" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+( earned?'+':'-')+'$'+Math.abs(payout)+'</div><div class="payout-label" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+label+' &nbsp;·&nbsp; '+ws.totalMins+' min, '+ws.wakeCount+'/5 days 10am &nbsp;·&nbsp; '+(earned?'Allowance earned':'Rent owed')+'</div></div>';
 } else {
+// In progress or upcoming
 const future=new Date(wk.y,wk.m-1,wk.d)>today;
 if(future){
 html+='<div class="row"><div><div class="row-label">'+label+'</div><div class="input-sub">Upcoming</div></div><span class="badge" style="background:var(--gray-light);color:var(--gray)">—</span></div>';
 } else {
+// Current/partial week
 const minsOk=ws.totalMins>=WEEKLY_MIN_MINS;
 const wakeOk=ws.wakeCount===ws.validDays&&ws.validDays>0;
 const onTrack=minsOk&&wakeOk;
@@ -550,9 +566,10 @@ html+='<div class="row"><div><div class="row-label">'+label+(isCurrentWeek?' <sp
 }
 });
 if(settledCount>0){
-html+='<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><div style="font-size:14px;font-weight:500">Net balance</div><div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;color:'+(netTotal>=0?'var(--green)':'var(--red)')+'">'+( netTotal>=0?'+$':'-$')+Math.abs(netTotal)+'</div></div>';
+html+='<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><div style="font-size:14px;font-weight:500">Net balance</div><div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;color:'+(netTotal>=0?'var(--green)':'var(--red)')+'">'+( netTotal>=0?'+':'')+( netTotal>=0?'+$':'-$')+Math.abs(netTotal)+'</div></div>';
 }
 html+='</div>';
+// This week quick stats
 const ws=getWeekStats(u,TY,TM,TD);
 const minsOk=ws.totalMins>=WEEKLY_MIN_MINS;
 const wakeOk=ws.wakeCount===ws.validDays&&ws.validDays>0;
@@ -575,6 +592,8 @@ html+='</div>';
 });
 html+='</div>';
 document.getElementById('main-content').innerHTML=html;
+// Fix double +/- sign bug in net balance
+document.querySelectorAll('.card').forEach(function(card){});
 }
 
 window.setTab=function(t){ currentTab=t; render(); };
