@@ -67,7 +67,6 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#0d0d0d;min-heigh
 .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .day-cell{aspect-ratio:1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-family:'DM Mono',monospace}
 .day-cell.full{background:var(--green);color:#fff}
-.day-cell.partial{background:var(--amber-light);color:var(--amber)}
 .day-cell.miss{background:var(--red-light);color:var(--red)}
 .day-cell.future{background:var(--gray-light);color:#555}
 .day-cell.today-marker{box-shadow:0 0 0 1.5px var(--blue-mid)}
@@ -75,8 +74,8 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#0d0d0d;min-heigh
 .payout-card{border-radius:14px;padding:16px;margin-bottom:10px;border:1px solid}
 .payout-amount{font-size:28px;font-weight:600;font-family:'DM Mono',monospace;letter-spacing:-1px;margin-bottom:2px}
 .payout-label{font-size:12px;opacity:.75}
-.month-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:4px}
-.month-tag{font-size:11px;font-weight:600;background:var(--purple-light);color:var(--purple);padding:3px 8px;border-radius:99px}
+.week-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:4px}
+.week-tag{font-size:11px;font-weight:600;background:var(--purple-light);color:var(--purple);padding:3px 8px;border-radius:99px}
 .nav-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;background:#fff;border-top:0.5px solid var(--border);display:flex;padding:8px 0 20px;z-index:200}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;border:none;background:transparent;cursor:pointer;font-size:10px;font-weight:500;color:var(--gray);font-family:'DM Sans',sans-serif;transition:color .15s}
 .nav-item.active{color:var(--blue)}
@@ -171,6 +170,10 @@ const CATEGORIES = [
 {id:'custom',label:'Custom',icon:'ti-pencil',color:'purple'}
 ];
 
+const WEEKLY_STAKE = 125;
+const WEEKLY_MIN_MINS = 1200;
+const DAILY_MIN_MINS = 240;
+
 const today = new Date();
 const TY = today.getFullYear(), TM = today.getMonth()+1, TD = today.getDate();
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -237,42 +240,58 @@ days.forEach(function(day){
 if(new Date(day.y,day.m-1,day.d)>today) return;
 if(day.m<6||day.m>7) return;
 const e=getDayEntry(user,day.y,day.m,day.d);
-totalMins+=getTotalMins(e); if(e.wake9) wakeCount++; validDays++;
+totalMins+=getTotalMins(e);
+if(e.wake9) wakeCount++;
+validDays++;
 });
 return {totalMins:totalMins,wakeCount:wakeCount,validDays:validDays};
 }
 
-function getDayCredit(user,y,m,d,weeklyAdjust){
+function isWeekComplete(y,m,d){
+const days=getWeekDays(y,m,d);
+const fri=days[4];
+if(fri.m<6||fri.m>7) return false;
+return new Date(fri.y,fri.m-1,fri.d)<=today;
+}
+
+function getWeekPayout(user,y,m,d){
+if(!isWeekComplete(y,m,d)) return null;
+const ws=getWeekStats(user,y,m,d);
+const days=getWeekDays(y,m,d);
+const validCount=days.filter(function(day){ return day.m>=6&&day.m<=7; }).length;
+if(validCount===0) return null;
+if(ws.totalMins>=WEEKLY_MIN_MINS && ws.wakeCount===validCount){
+return WEEKLY_STAKE;
+} else {
+return -WEEKLY_STAKE;
+}
+}
+
+function getProgramWeeks(){
+const weeks=[];
+const june1=new Date(TY,5,1);
+const june1dow=june1.getDay();
+const offsetToMon=june1dow===0?-6:1-june1dow;
+let mon=new Date(TY,5,june1.getDate()+offsetToMon);
+const julEnd=new Date(TY,6,31);
+while(true){
+const fri=new Date(mon); fri.setDate(mon.getDate()+4);
+const weekStart={y:mon.getFullYear(),m:mon.getMonth()+1,d:mon.getDate()};
+const hasJunJul=getWeekDays(weekStart.y,weekStart.m,weekStart.d).some(function(day){ return day.m===6||day.m===7; });
+if(!hasJunJul) break;
+if(mon>julEnd) break;
+weeks.push({y:weekStart.y,m:weekStart.m,d:weekStart.d});
+mon=new Date(mon); mon.setDate(mon.getDate()+7);
+if(weeks.length>20) break;
+}
+return weeks;
+}
+
+function getDayCredit(user,y,m,d){
 const e=getDayEntry(user,y,m,d);
 if(!e.wake9) return 'miss';
 const mins=getTotalMins(e);
-if(mins>=240) return 'full';
-if(weeklyAdjust){
-const ws=getWeekStats(user,y,m,d);
-if(ws.totalMins>=1200&&ws.wakeCount===ws.validDays) return 'full';
-if(ws.totalMins>=900) return 'partial';
-}
-if(mins>=180) return 'partial';
-return 'miss';
-}
-
-function getMonthStats(user,month){
-const mi=MONTHS[month]; if(!mi) return {credits:0,possible:0,pct:0};
-let possible=0,credits=0;
-for(let d=1;d<=mi.days;d++){
-if(!isWeekday(TY,month,d)) continue;
-if(new Date(TY,month-1,d)>today) continue;
-possible++; if(getDayCredit(user,TY,month,d,true)==='full') credits++;
-}
-return {possible:possible,credits:credits,pct:possible?Math.round(credits/possible*100):0};
-}
-
-function getExpectedDays(month){ const mi=MONTHS[month]; if(!mi) return 0; let c=0; for(let d=1;d<=mi.days;d++) if(isWeekday(TY,month,d)) c++; return c; }
-
-function getPayout(user,month){
-const mi=MONTHS[month]; if(!mi) return null;
-const stats=getMonthStats(user,month); if(stats.possible===0) return null;
-return (getExpectedDays(month)>0?stats.credits/getExpectedDays(month):0)>=0.9?500:-500;
+return mins>=DAILY_MIN_MINS?'full':'miss';
 }
 
 function prevValidDate(y,m,d){
@@ -295,6 +314,14 @@ const ny=dt.getFullYear(),nm=dt.getMonth()+1,nd=dt.getDate();
 if(isValidLogDate(ny,nm,nd)) return {y:ny,m:nm,d:nd};
 }
 return null;
+}
+
+function formatWeekLabel(y,m,d){
+const days=getWeekDays(y,m,d);
+const mon=days[0]; const fri=days[4];
+const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+if(mon.m===fri.m) return mn[mon.m-1]+' '+mon.d+'–'+fri.d;
+return mn[mon.m-1]+' '+mon.d+' – '+mn[fri.m-1]+' '+fri.d;
 }
 
 function showSetup(){
@@ -356,7 +383,7 @@ function render(){
 document.getElementById('page-tabs').innerHTML='';
 const navTabs=[
 {id:'log',icon:'ti-calendar-event',label:'Log'},
-{id:'month',icon:'ti-calendar-month',label:'Month'},
+{id:'month',icon:'ti-calendar-month',label:'Calendar'},
 {id:'tally',icon:'ti-coin',label:'Tally'}
 ];
 document.getElementById('nav-bar').innerHTML=navTabs.map(function(t){
@@ -403,13 +430,14 @@ users.forEach(function(u){
 const e=getDayEntry(u,y,m,d);
 const ws=getWeekStats(u,y,m,d);
 const dayMins=getTotalMins(e);
+const dayGoalMet=dayMins>=DAILY_MIN_MINS;
 html+='<div class="card">';
 html+='<div class="card-title" style="display:flex;justify-content:space-between;align-items:center">';
 html+='<span>'+(isParent?u+' - ':'')+dateLabel+'</span>';
-html+='<span class="month-tag">$500 stakes</span>';
+html+='<span class="week-tag">$125/week</span>';
 html+='</div>';
 html+='<div class="toggle-row" style="border-bottom:0.5px solid var(--border)">';
-html+='<div><div class="toggle-label">Up and productive by 10am</div><div class="toggle-sub">Required every day</div></div>';
+html+='<div><div class="toggle-label">Up and productive by 10am</div><div class="toggle-sub">Required Mon–Fri</div></div>';
 if(isParent){
 html+='<span class="badge" style="background:'+(e.wake9?'var(--green-light)':'var(--red-light)')+';color:'+(e.wake9?'var(--green)':'var(--red)')+'">'+( e.wake9?'Yes':'No')+'</span>';
 } else {
@@ -418,11 +446,12 @@ html+='<button class="toggle '+(e.wake9?'on':'off')+'" onclick="window._toggleWa
 html+='</div>';
 html+='<div style="margin:10px 0 6px">';
 html+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
-html+='<span style="color:var(--gray)">This day: '+dayMins+' min</span>';
-html+='<span style="color:var(--gray)">Week: '+ws.totalMins+' / 1,200 min</span>';
+html+='<span style="color:'+(dayGoalMet?'var(--green)':'var(--gray)')+'">Today: '+dayMins+' / '+DAILY_MIN_MINS+' min'+(dayGoalMet?' ✓':'')+'</span>';
+html+='<span style="color:'+(ws.totalMins>=WEEKLY_MIN_MINS?'var(--green)':'var(--gray)')+'">Week: '+ws.totalMins+' / '+WEEKLY_MIN_MINS+' min</span>';
 html+='</div>';
-const barColor=ws.totalMins>=1200?'var(--green)':ws.totalMins>=900?'var(--amber-mid)':'var(--blue-mid)';
-html+='<div class="hours-bar"><div class="hours-fill" style="width:'+Math.min(100,ws.totalMins/12)+'%;background:'+barColor+'"></div></div>';
+const dayBarColor=dayGoalMet?'var(--green)':dayMins>=120?'var(--amber-mid)':'var(--blue-mid)';
+html+='<div class="hours-bar"><div class="hours-fill" style="width:'+Math.min(100,dayMins/DAILY_MIN_MINS*100)+'%;background:'+dayBarColor+'"></div></div>';
+html+='<div style="font-size:11px;color:var(--gray);margin-top:3px">Daily goal: 4 hrs &nbsp;·&nbsp; Weekly goal: 1,200 min + 10am all 5 days = <strong style="color:var(--green)">earn $125</strong></div>';
 html+='</div>';
 if(!isParent){
 html+='<div style="margin-top:8px">';
@@ -461,18 +490,11 @@ const isParent=currentUser==='Parents';
 const users=isParent?['Luke','Michael']:[currentUser];
 let html='<div class="section">';
 users.forEach(function(u){
-html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Monthly Overview</div>';
+html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Activity Calendar</div>';
 [6,7].forEach(function(mo){
 const mi=MONTHS[mo];
-const stats=getMonthStats(u,mo);
-const expected=getExpectedDays(mo);
-const pct90=Math.ceil(expected*0.9);
-html+='<div class="month-header"><div style="font-size:14px;font-weight:500">'+mi.name+'</div>';
-html+='<span class="month-tag">$500 stakes</span>';
-html+='</div>';
-html+='<div class="stat-grid" style="margin-bottom:10px">';
-html+='<div class="stat"><div class="stat-label">Days credited</div><div class="stat-num '+(stats.credits>=pct90?'green':stats.possible>0?'amber':'')+'">'+stats.credits+' / '+stats.possible+'</div><div class="stat-sub">of '+expected+' weekdays</div></div>';
-html+='<div class="stat"><div class="stat-label">Completion</div><div class="stat-num '+(stats.pct>=90?'green':stats.pct>=70?'amber':'red')+'">'+(stats.possible>0?stats.pct:'-')+'%</div><div class="stat-sub">need 90% ('+pct90+' days)</div></div>';
+html+='<div class="week-header"><div style="font-size:14px;font-weight:500">'+mi.name+'</div>';
+html+='<span class="week-tag">$125/week</span>';
 html+='</div>';
 html+='<div class="day-grid" style="margin-bottom:12px">';
 ['M','T','W','T','F','S','S'].forEach(function(dn){ html+='<div style="font-size:9px;color:var(--gray);text-align:center;padding-bottom:2px">'+dn+'</div>'; });
@@ -484,12 +506,12 @@ const isFuture=new Date(TY,mo-1,d)>today;
 const isTodayCell=mo===TM&&d===TD;
 if(dow===0||dow===6){ html+='<div class="day-cell weekend">'+d+'</div>'; continue; }
 if(isFuture){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
-const cr=getDayCredit(u,TY,mo,d,true);
-html+='<div class="day-cell '+(cr==='full'?'full':cr==='partial'?'partial':'miss')+(isTodayCell?' today-marker':'')+'" >'+d+'</div>';
+const cr=getDayCredit(u,TY,mo,d);
+html+='<div class="day-cell '+(cr==='full'?'full':'miss')+(isTodayCell?' today-marker':'')+'">'+d+'</div>';
 }
 html+='</div>';
-html+='<div class="info-note" style="margin-bottom:14px"><span style="color:var(--green-mid);font-weight:600">Full</span> = 4 hrs + 10am start &nbsp;<span style="color:var(--amber-mid);font-weight:600">Partial</span> = week on track &nbsp;<span style="color:var(--red-mid);font-weight:600">Miss</span> = incomplete</div>';
 });
+html+='<div class="info-note"><span style="color:var(--green-mid);font-weight:600">Green</span> = 10am + 4 hrs &nbsp;·&nbsp; <span style="color:var(--red-mid);font-weight:600">Red</span> = missed &nbsp;·&nbsp; Weekly totals determine payout</div>';
 html+='</div>';
 });
 html+='</div>';
@@ -499,40 +521,55 @@ document.getElementById('main-content').innerHTML=html;
 function renderTally(){
 const isParent=currentUser==='Parents';
 const users=isParent?['Luke','Michael']:[currentUser];
+const weeks=getProgramWeeks();
 let html='<div class="section">';
-if(isParent) html+='<div class="info-note" style="margin-bottom:12px">June and July: 90% or more earns <strong style="color:var(--green)">+$500</strong>, under 90% owes <strong style="color:var(--red)">$500</strong> rent.</div>';
+if(isParent) html+='<div class="info-note" style="margin-bottom:12px">Each week: 1,200+ min <strong>and</strong> 10am all 5 days = <strong style="color:var(--green)">earn $125</strong>. Otherwise <strong style="color:var(--red)">owe $125</strong> rent.</div>';
 users.forEach(function(u){
-let total=0;
-html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Running Tally</div>';
-[6,7].forEach(function(mo){
-const mi=MONTHS[mo];
-const stats=getMonthStats(u,mo);
-const expected=getExpectedDays(mo);
-const pct90=Math.ceil(expected*0.9);
-const payout=getPayout(u,mo);
-const monthDone=new Date(TY,mo,1)<=today;
-if(monthDone&&payout!==null){
-total+=payout; const earned=payout>0;
-html+='<div class="payout-card" style="background:'+(earned?'var(--green-light)':'var(--red-light)')+';border-color:'+(earned?'var(--green-mid)':'var(--red-mid)')+'"><div class="payout-amount" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+( earned?'+':'-')+'$'+Math.abs(payout)+'</div><div class="payout-label" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+mi.name+' - '+stats.credits+' of '+expected+' days ('+stats.pct+'%) - '+(earned?'Allowance earned':'Rent owed')+'</div></div>';
+let netTotal=0; let settledCount=0;
+html+='<div class="card"><div class="card-title">'+(isParent?u+' - ':'')+'Weekly Tally</div>';
+weeks.forEach(function(wk){
+const payout=getWeekPayout(u,wk.y,wk.m,wk.d);
+const ws=getWeekStats(u,wk.y,wk.m,wk.d);
+const label=formatWeekLabel(wk.y,wk.m,wk.d);
+const isCurrentWeek=isToday(TY,TM,TD)&&getMonday(TY,TM,TD).getTime()===new Date(wk.y,wk.m-1,wk.d).getTime();
+if(payout!==null){
+netTotal+=payout; settledCount++;
+const earned=payout>0;
+html+='<div class="payout-card" style="background:'+(earned?'var(--green-light)':'var(--red-light)')+';border-color:'+(earned?'var(--green-mid)':'var(--red-mid)')+'"><div class="payout-amount" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+( earned?'+':'-')+'$'+Math.abs(payout)+'</div><div class="payout-label" style="color:'+(earned?'var(--green)':'var(--red)')+'">'+label+' &nbsp;·&nbsp; '+ws.totalMins+' min, '+ws.wakeCount+'/5 days 10am &nbsp;·&nbsp; '+(earned?'Allowance earned':'Rent owed')+'</div></div>';
 } else {
-const onTrack=stats.possible===0||(stats.credits/(stats.possible||1)>=0.9);
-html+='<div class="row"><div><div class="row-label">'+mi.name+'</div><div class="input-sub">'+stats.credits+' of '+stats.possible+' days - need '+pct90+' of '+expected+'</div></div><span class="badge" style="background:'+(onTrack?'var(--green-light)':'var(--amber-light)')+';color:'+(onTrack?'var(--green)':'var(--amber)')+'">'+( onTrack?'On track':'Behind')+'</span></div>';
+const future=new Date(wk.y,wk.m-1,wk.d)>today;
+if(future){
+html+='<div class="row"><div><div class="row-label">'+label+'</div><div class="input-sub">Upcoming</div></div><span class="badge" style="background:var(--gray-light);color:var(--gray)">—</span></div>';
+} else {
+const minsOk=ws.totalMins>=WEEKLY_MIN_MINS;
+const wakeOk=ws.wakeCount===ws.validDays&&ws.validDays>0;
+const onTrack=minsOk&&wakeOk;
+const partial=minsOk||wakeOk;
+html+='<div class="row"><div><div class="row-label">'+label+(isCurrentWeek?' <span class="today-chip">This week</span>':'')+'</div><div class="input-sub">'+ws.totalMins+' min &nbsp;·&nbsp; '+ws.wakeCount+'/'+ws.validDays+' days 10am</div></div><span class="badge" style="background:'+(onTrack?'var(--green-light)':partial?'var(--amber-light)':'var(--red-light)')+';color:'+(onTrack?'var(--green)':partial?'var(--amber)':'var(--red)')+'">'+( onTrack?'On track':partial?'Partial':'Behind')+'</span></div>';
+}
 }
 });
-if([6,7].some(function(mo){ return new Date(TY,mo,1)<=today&&getPayout(u,mo)!==null; })){
-html+='<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><div style="font-size:14px;font-weight:500">Net balance</div><div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;color:'+(total>=0?'var(--green)':'var(--red)')+'">'+( total>=0?'+':'-')+'$'+Math.abs(total)+'</div></div>';
+if(settledCount>0){
+html+='<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><div style="font-size:14px;font-weight:500">Net balance</div><div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;color:'+(netTotal>=0?'var(--green)':'var(--red)')+'">'+( netTotal>=0?'+$':'-$')+Math.abs(netTotal)+'</div></div>';
 }
 html+='</div>';
-html+='<div class="card"><div class="card-title">This week</div>';
 const ws=getWeekStats(u,TY,TM,TD);
-html+='<div class="stat-grid"><div class="stat"><div class="stat-label">Total minutes</div><div class="stat-num '+(ws.totalMins>=1200?'green':ws.totalMins>=900?'amber':'red')+'">'+ws.totalMins+'</div><div class="stat-sub">goal: 1,200 min</div></div><div class="stat"><div class="stat-label">10am start days</div><div class="stat-num '+(ws.wakeCount>=ws.validDays&&ws.validDays>0?'green':ws.wakeCount>0?'amber':'red')+'">'+ws.wakeCount+' / '+ws.validDays+'</div><div class="stat-sub">this week so far</div></div></div>';
-const barColor=ws.totalMins>=1200?'var(--green)':ws.totalMins>=900?'var(--amber-mid)':'var(--blue-mid)';
-html+='<div class="hours-bar" style="margin-top:8px"><div class="hours-fill" style="width:'+Math.min(100,ws.totalMins/12)+'%;background:'+barColor+'"></div></div>';
-html+='<div style="font-size:12px;color:var(--gray);margin-top:4px;text-align:right">'+Math.round(ws.totalMins/12)+'% of weekly goal</div>';
-if(ws.totalMins>=1200&&ws.wakeCount===ws.validDays&&ws.validDays>0){
-html+='<div class="info-note" style="background:var(--green-light);color:var(--green);margin-top:8px"><i class="ti ti-trophy" aria-hidden="true"></i> Week complete - all days get full credit.</div>';
-} else if(ws.totalMins>=1200){
-html+='<div class="info-note" style="margin-top:8px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Hours goal met but '+(ws.validDays-ws.wakeCount)+' day(s) missing 10am start.</div>';
+const minsOk=ws.totalMins>=WEEKLY_MIN_MINS;
+const wakeOk=ws.wakeCount===ws.validDays&&ws.validDays>0;
+html+='<div class="card"><div class="card-title">This week at a glance</div>';
+html+='<div class="stat-grid">';
+html+='<div class="stat"><div class="stat-label">Activity minutes</div><div class="stat-num '+(minsOk?'green':ws.totalMins>=600?'amber':'red')+'">'+ws.totalMins+'</div><div class="stat-sub">goal: '+WEEKLY_MIN_MINS+' min</div></div>';
+html+='<div class="stat"><div class="stat-label">10am start days</div><div class="stat-num '+(wakeOk?'green':ws.wakeCount>0?'amber':'red')+'">'+ws.wakeCount+' / '+ws.validDays+'</div><div class="stat-sub">need all '+ws.validDays+' days</div></div>';
+html+='</div>';
+const barColor=minsOk?'var(--green)':ws.totalMins>=600?'var(--amber-mid)':'var(--blue-mid)';
+html+='<div class="hours-bar"><div class="hours-fill" style="width:'+Math.min(100,ws.totalMins/WEEKLY_MIN_MINS*100)+'%;background:'+barColor+'"></div></div>';
+html+='<div style="font-size:12px;color:var(--gray);margin-top:4px;text-align:right">'+Math.round(ws.totalMins/WEEKLY_MIN_MINS*100)+'% of weekly minutes goal</div>';
+if(minsOk&&wakeOk&&ws.validDays>0){
+html+='<div class="info-note" style="background:var(--green-light);color:var(--green);margin-top:8px"><i class="ti ti-trophy" aria-hidden="true"></i> Week complete - $125 earned!</div>';
+} else if(minsOk&&!wakeOk){
+html+='<div class="info-note" style="margin-top:8px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Minutes goal met, but '+(ws.validDays-ws.wakeCount)+' day(s) still need 10am start.</div>';
+} else if(!minsOk&&wakeOk&&ws.validDays>0){
+html+='<div class="info-note" style="margin-top:8px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 10am goal met, but '+(WEEKLY_MIN_MINS-ws.totalMins)+' more minutes needed.</div>';
 }
 html+='</div>';
 });
