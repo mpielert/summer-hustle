@@ -186,15 +186,33 @@ let currentTab = 'log';
 let dbData = { Luke:{days:{}}, Michael:{days:{}} };
 let unsubscribe = null;
 let logY = TY, logM = TM, logD = TD;
-const PROGRAM_START = new Date(TY,5,9); // Monday June 9 - program start
+const PROGRAM_START_Y=TY, PROGRAM_START_M=6, PROGRAM_START_D=9; // June 9 - program start
 
 function isWeekday(y,m,d){ const dow=new Date(y,m-1,d).getDay(); return dow>=1&&dow<=5; }
+
+function dateNum(y,m,d){ return y*10000+m*100+d; }
+
+// Sunday (end of week) for the week containing today
+// Mon=1..Fri=5..Sun=0; days until Sunday = (7 - dow) % 7, but if today is Sunday => 0
+function getSundayOfWeek(y,m,d){
+  const dt = new Date(y,m-1,d);
+  const dow = dt.getDay(); // 0=Sun,1=Mon,...,6=Sat
+  const daysToSun = dow===0 ? 0 : 7-dow;
+  const sun = new Date(y,m-1,d+daysToSun);
+  return {y:sun.getFullYear(), m:sun.getMonth()+1, d:sun.getDate()};
+}
+const weekSun = getSundayOfWeek(TY,TM,TD);
 
 function isValidLogDate(y,m,d){
 if(m<6||m>7) return false;
 if(!isWeekday(y,m,d)) return false;
-const dt=new Date(y,m-1,d);
-return dt>=PROGRAM_START && dt<=today;
+const n=dateNum(y,m,d);
+// At or after program start
+if(n < dateNum(PROGRAM_START_Y,PROGRAM_START_M,PROGRAM_START_D)) return false;
+// At or before Friday of current week (Sun = end of edit window, but only weekdays logged)
+// Allow any weekday whose week-Sunday is <= current week's Sunday
+const daySun = getSundayOfWeek(y,m,d);
+return dateNum(daySun.y,daySun.m,daySun.d) <= dateNum(weekSun.y,weekSun.m,weekSun.d);
 }
 
 function getMonday(y,m,d){ const dt=new Date(y,m-1,d); const day=dt.getDay(); return new Date(y,m-1,dt.getDate()-(day===0?6:day-1)); }
@@ -283,7 +301,7 @@ return -WEEKLY_STAKE; // owe
 
 function getProgramWeeks(){
 const weeks=[];
-let mon=new Date(PROGRAM_START);
+let mon=new Date(PROGRAM_START_Y,PROGRAM_START_M-1,PROGRAM_START_D);
 const julEnd=new Date(TY,6,31);
 while(true){
 const weekStart={y:mon.getFullYear(),m:mon.getMonth()+1,d:mon.getDate()};
@@ -316,10 +334,8 @@ return null;
 
 function nextValidDate(y,m,d){
 const dt=new Date(y,m-1,d);
-const todayDt=new Date(TY,TM-1,TD);
 for(let i=0;i<60;i++){
 dt.setDate(dt.getDate()+1);
-if(dt>todayDt) return null;
 const ny=dt.getFullYear(),nm=dt.getMonth()+1,nd=dt.getDate();
 if(isValidLogDate(ny,nm,nd)) return {y:ny,m:nm,d:nd};
 }
@@ -513,18 +529,22 @@ const firstDow=new Date(TY,mo-1,1).getDay();
 for(let i=0;i<(firstDow===0?6:firstDow-1);i++) html+='<div></div>';
 for(let d=1;d<=mi.days;d++){
 const dow=new Date(TY,mo-1,d).getDay();
-const cellDt=new Date(TY,mo-1,d);
-const isFuture=cellDt>today;
-const isBeforeProgram=cellDt<PROGRAM_START;
+const dn=dateNum(TY,mo,d);
+const isBeforeProgram=dn<dateNum(PROGRAM_START_Y,PROGRAM_START_M,PROGRAM_START_D);
+const isThisWeekOrEarlier=isValidLogDate(TY,mo,d);
+const isBeyondWindow=!isBeforeProgram&&!isThisWeekOrEarlier&&dow>=1&&dow<=5;
 const isTodayCell=mo===TM&&d===TD;
 if(dow===0||dow===6){ html+='<div class="day-cell weekend">'+d+'</div>'; continue; }
-if(isFuture||isBeforeProgram){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
+if(isBeforeProgram||isBeyondWindow){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'">'+d+'</div>'; continue; }
+// This week's future weekdays: show as open/pending (blue outline)
+const isFutureThisWeek=dn>dateNum(TY,TM,TD)&&isThisWeekOrEarlier;
+if(isFutureThisWeek){ html+='<div class="day-cell future'+(isTodayCell?' today-marker':'')+'" style="border:1.5px dashed var(--blue-mid);background:var(--blue-light);color:var(--blue-mid)">'+d+'</div>'; continue; }
 const cr=getDayCredit(u,TY,mo,d);
 html+='<div class="day-cell '+(cr==='full'?'full':'miss')+(isTodayCell?' today-marker':'')+'">'+d+'</div>';
 }
 html+='</div>';
 });
-html+='<div class="info-note"><span style="color:var(--green-mid);font-weight:600">Green</span> = 10am + 4 hrs &nbsp;·&nbsp; <span style="color:var(--red-mid);font-weight:600">Red</span> = missed &nbsp;·&nbsp; Weekly totals determine payout</div>';
+html+='<div class="info-note"><span style="color:var(--green-mid);font-weight:600">Green</span> = 10am + 4 hrs &nbsp;·&nbsp; <span style="color:var(--red-mid);font-weight:600">Red</span> = missed &nbsp;·&nbsp; <span style="color:var(--blue-mid);font-weight:600">Blue</span> = log by Sunday &nbsp;·&nbsp; Weekly total = payout</div>';
 html+='</div>';
 });
 html+='</div>';
