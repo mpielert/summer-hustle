@@ -21,6 +21,7 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#0d0d0d;min-heigh
 --red:#8b1010;--red-light:#fcd5d5;--red-mid:#c03030;
 --blue:#0f4080;--blue-light:#d6e6f8;--blue-mid:#2e6db4;
 --purple:#3d2490;--purple-light:#e4ddf9;
+--teal:#0d6655;--teal-light:#d0f0eb;--teal-mid:#1a8c76;
 --gray:#555;--gray-light:#e8e6e0;--border:#ccc9c0;
 --bg:#f5f4f0;--card:#fff;--surface:#f0efe9;
 }
@@ -61,6 +62,17 @@ body{font-family:'DM Sans',sans-serif;background:#f5f4f0;color:#0d0d0d;min-heigh
 .min-input{width:64px;border:0.5px solid var(--border);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:600;font-family:'DM Mono',monospace;text-align:right;background:var(--surface);color:#0d0d0d}
 .custom-input{flex:1;border:0.5px solid var(--border);border-radius:8px;padding:6px 8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface);color:#0d0d0d;font-weight:500;min-width:0}
 .custom-input:focus,.min-input:focus{outline:none;border-color:var(--blue-mid)}
+/* Gratitude field */
+.gratitude-block{margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border)}
+.gratitude-label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--teal);margin-bottom:6px}
+.gratitude-label i{font-size:16px}
+.gratitude-required{font-size:10px;font-weight:600;background:var(--teal-light);color:var(--teal);padding:2px 6px;border-radius:99px;margin-left:auto}
+.gratitude-input{width:100%;border:0.5px solid var(--teal-mid);border-radius:8px;padding:9px 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:#f7fdfc;color:#0d0d0d;font-weight:500;resize:none;line-height:1.5}
+.gratitude-input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 2px rgba(13,102,85,0.1)}
+.gratitude-input::placeholder{color:#999;font-style:italic}
+.gratitude-input.missing{border-color:var(--red-mid);background:var(--red-light)}
+.gratitude-view{font-size:13px;color:#0d0d0d;font-style:italic;background:var(--teal-light);border-radius:8px;padding:8px 10px;line-height:1.5}
+.gratitude-empty{font-size:12px;color:#999;font-style:italic}
 .btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
 .btn-primary{background:var(--green);color:#fff}
 .btn-primary:active{transform:scale(0.98)}
@@ -183,10 +195,9 @@ let currentTab = 'log';
 let dbData = { Luke:{days:{}}, Michael:{days:{}} };
 let unsubscribe = null;
 let logY = TY, logM = TM, logD = TD;
-const PROGRAM_START_Y=TY, PROGRAM_START_M=6, PROGRAM_START_D=8; // June 8 - program start
+const PROGRAM_START_Y=TY, PROGRAM_START_M=6, PROGRAM_START_D=8;
 
 function isWeekday(y,m,d){ const dow=new Date(y,m-1,d).getDay(); return dow>=1&&dow<=5; }
-
 function dateNum(y,m,d){ return y*10000+m*100+d; }
 
 function getSundayOfWeek(y,m,d){
@@ -222,7 +233,7 @@ lbl.textContent=status==='live'?'live':status==='saving'?'saving':'offline';
 
 function getDayEntry(user,y,m,d){
 const k=dateKey(y,m,d);
-return (dbData[user]&&dbData[user].days&&dbData[user].days[k]) || {wake9:false,exercise:0,work:0,house:0,custom:0,customLabel:'',saved:false};
+return (dbData[user]&&dbData[user].days&&dbData[user].days[k]) || {wake9:false,exercise:0,work:0,house:0,custom:0,customLabel:'',grateful:'',saved:false};
 }
 
 async function saveDayEntry(user,y,m,d,entry){
@@ -440,11 +451,13 @@ const e=getDayEntry(u,y,m,d);
 const ws=getWeekStats(u,y,m,d);
 const dayMins=getTotalMins(e);
 const dayGoalMet=dayMins>=DAILY_MIN_MINS;
+const gratefulVal=e.grateful||'';
 html+='<div class="card">';
 html+='<div class="card-title" style="display:flex;justify-content:space-between;align-items:center">';
 html+='<span>'+(isParent?u+' - ':'')+dateLabel+'</span>';
 html+='<span class="week-tag">$125/week</span>';
 html+='</div>';
+// Wake toggle
 html+='<div class="toggle-row" style="border-bottom:0.5px solid var(--border)">';
 html+='<div><div class="toggle-label">Up and productive by 10am</div><div class="toggle-sub">Required Mon–Fri</div></div>';
 if(isParent){
@@ -453,6 +466,7 @@ html+='<span class="badge" style="background:'+(e.wake9?'var(--green-light)':'va
 html+='<button class="toggle '+(e.wake9?'on':'off')+'" onclick="window._toggleWake(\''+u+'\','+y+','+m+','+d+')"><div class="toggle-knob"></div></button>';
 }
 html+='</div>';
+// Progress bars
 html+='<div style="margin:10px 0 6px">';
 html+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
 html+='<span style="color:'+(dayGoalMet?'var(--green)':'var(--gray)')+'">Today: '+dayMins+' / '+DAILY_MIN_MINS+' min'+(dayGoalMet?' ✓':'')+'</span>';
@@ -462,6 +476,7 @@ const dayBarColor=dayGoalMet?'var(--green)':dayMins>=120?'var(--amber-mid)':'var
 html+='<div class="hours-bar"><div class="hours-fill" style="width:'+Math.min(100,dayMins/DAILY_MIN_MINS*100)+'%;background:'+dayBarColor+'"></div></div>';
 html+='<div style="font-size:11px;color:var(--gray);margin-top:3px">Daily goal: 4 hrs &nbsp;·&nbsp; Weekly goal: 1,200 min + 10am all 5 days = <strong style="color:var(--green)">earn $125</strong></div>';
 html+='</div>';
+// Activity minutes
 if(!isParent){
 html+='<div style="margin-top:8px">';
 CATEGORIES.forEach(function(cat){
@@ -480,12 +495,29 @@ html+='<input class="min-input" type="number" min="0" max="480" step="5" value="
 html+='</div>';
 });
 html+='</div>';
+// Gratitude field (editable)
+html+='<div class="gratitude-block">';
+html+='<div class="gratitude-label"><i class="ti ti-heart" aria-hidden="true"></i> Today I am grateful for…<span class="gratitude-required">Required</span></div>';
+html+='<textarea class="gratitude-input'+(e.saved&&!gratefulVal?' missing':'')+'" rows="2" placeholder="Write something you\'re grateful for today..." id="grateful-'+u+'-'+dateKey(y,m,d)+'" oninput="window._updateGrateful(\''+u+'\','+y+','+m+','+d+',this.value)">'+gratefulVal+'</textarea>';
+if(e.saved&&!gratefulVal) html+='<div style="font-size:11px;color:var(--red-mid);margin-top:4px"><i class="ti ti-alert-circle" aria-hidden="true"></i> Please add a gratitude entry before saving.</div>';
+html+='</div>';
+// Save button
 html+='<div style="margin-top:12px"><button class="btn btn-primary" onclick="window._saveDay(\''+u+'\','+y+','+m+','+d+')"><i class="ti ti-check" aria-hidden="true"></i> Save log</button></div>';
 } else {
+// Parents read-only view
 html+='<div style="margin-top:8px">';
 CATEGORIES.forEach(function(cat){
 html+='<div class="row"><span class="row-label">'+(cat.id==='custom'?(e.customLabel||'Custom task'):cat.label)+'</span><span class="row-val">'+(e[cat.id]||0)+' min</span></div>';
 });
+html+='</div>';
+// Gratitude read-only
+html+='<div class="gratitude-block">';
+html+='<div class="gratitude-label"><i class="ti ti-heart" aria-hidden="true"></i> Grateful for…</div>';
+if(gratefulVal){
+html+='<div class="gratitude-view">'+gratefulVal+'</div>';
+} else {
+html+='<div class="gratitude-empty">Nothing entered yet.</div>';
+}
 html+='</div>';
 }
 html+='</div>';
@@ -626,8 +658,29 @@ if(!dbData[user].days) dbData[user].days={};
 dbData[user].days[dateKey(y,m,d)]=e;
 };
 
+window._updateGrateful=function(user,y,m,d,val){
+const e=getDayEntry(user,y,m,d);
+e.grateful=val;
+if(!dbData[user]) dbData[user]={days:{}};
+if(!dbData[user].days) dbData[user].days={};
+dbData[user].days[dateKey(y,m,d)]=e;
+};
+
 window._saveDay=async function(user,y,m,d){
 const e=getDayEntry(user,y,m,d);
+// Enforce gratitude entry before saving
+if(!e.grateful||!e.grateful.trim()){
+e.saved=true; // mark attempted so we can show the error state
+if(!dbData[user]) dbData[user]={days:{}};
+if(!dbData[user].days) dbData[user].days={};
+dbData[user].days[dateKey(y,m,d)]=e;
+renderLog();
+toast('Add a gratitude entry to save ✍️');
+// Focus the textarea
+const el=document.getElementById('grateful-'+user+'-'+dateKey(y,m,d));
+if(el){ el.classList.add('missing'); el.focus(); }
+return;
+}
 e.saved=true;
 await saveDayEntry(user,y,m,d,e);
 render();
